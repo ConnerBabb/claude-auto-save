@@ -4,7 +4,7 @@ Save context from the current session — review what was done, capture anything
 
 Before walking the full flow, quickly assess: did anything *material* happen this session? A short read-only Q&A, a single trivial edit, or a tiny doc tweak usually doesn't warrant a full save-context pass.
 
-If the answer is "nothing notable," tell the user that explicitly and stop. Don't manufacture artifacts. Otherwise continue.
+If the answer is "nothing notable," tell the user that explicitly, jump to **Step 5** to mark the session saved (so the hook stops nudging), then stop. Don't manufacture artifacts. Otherwise continue.
 
 ## Step 1: Session review
 
@@ -58,6 +58,8 @@ Before writing anything to disk, list each proposed memory entry with:
 - The full body content
 
 Ask the user to confirm — per-entry or batch ("approve all"). Do **not** skip this confirmation, even if the user said "save memories" earlier in the session — they may want to edit or drop specific entries before they hit disk. If the user rejects an entry, drop it.
+
+If **every** proposed entry is rejected (or you had nothing to propose in the first place), skip 4b/4c/4d entirely and jump to **Step 5** to mark the session saved.
 
 ### 4b. Check for existing entries first
 
@@ -123,6 +125,25 @@ metadata:
 Link related memories with `[[other-name]]` references, where `other-name` matches another file's `name:` slug. Link liberally — an `[[link]]` to an unwritten memory marks it as something worth writing later.
 
 `index_entries` follow the format `- [Title](filename.md) - one-line hook`. Keep `MEMORY.md` under ~200 lines total (content past that may be truncated when loaded into future sessions). The helper dedups, so re-running with the same line is a no-op.
+
+## Step 5: Mark this session saved
+
+If this skill was triggered by a hook nudge, the nudge text in your context contains `--session-id` and `--transcript-path` values. Use them to write the saved sentinel so the hook stops nudging for the rest of this session (until compaction).
+
+**If Step 4c ran with both `--session-id` and `--transcript-path`, the helper already wrote the saved sentinel — skip this step.**
+
+Otherwise (Step 0 short-circuited, all entries rejected in 4a, or memories written without the helper for some reason), invoke the helper in sentinel-only mode:
+
+```bash
+python ~/.claude/hooks/memory_write.py \
+    --mark-saved-only \
+    --session-id <session_id_from_nudge> \
+    --transcript-path <transcript_path_from_nudge>
+```
+
+The helper reads the current `context_used` from the transcript, writes the sentinel as `status: saved`, and the hook will stay quiet for the rest of this session unless compaction resets it.
+
+If the skill was invoked manually outside a hook fire (no nudge values in context), skip this step — there's no sentinel to write and the hook isn't pending anything.
 
 ### Memory types — what goes where
 
