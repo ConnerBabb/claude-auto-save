@@ -32,8 +32,16 @@ For any follow-up work identified in Step 1 that isn't already tracked:
 If any documentation updates were identified:
 
 1. List them and ask the user which to do now vs skip.
-2. Make the approved updates (CLAUDE.md, inline docs, etc.).
-3. Commit and push if on a branch, or note as a follow-up issue.
+
+2. **For every CLAUDE.md edit, always choose the minimal scope.** Write each fact, rule, or convention to the most narrowly-scoped `CLAUDE.md` that fully covers it:
+   - If the rule applies repo-wide, edit the root `CLAUDE.md`.
+   - If it only applies to one component (a backend, a webapp, an extension, a specific package, a specific subdirectory), edit *that directory's* `CLAUDE.md`.
+   - If the relevant directory genuinely needs documentation but doesn't have a `CLAUDE.md` yet, **create one there** rather than pushing the content up to a wider scope.
+   - Never write directory-specific guidance into a parent `CLAUDE.md` when a narrower file is appropriate. The root `CLAUDE.md` should only carry repo-wide facts.
+
+3. Make the approved updates (CLAUDE.md files at their correct scope, inline docs, README sections, etc.).
+
+4. Commit and push if on a branch, or note as a follow-up issue.
 
 ## Step 4: Save memories
 
