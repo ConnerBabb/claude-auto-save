@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import json
 import shutil
+import subprocess
 import sys
 from pathlib import Path
 
@@ -50,6 +51,30 @@ def main() -> int:
     return _install(paths, force=args.force, dry_run=args.dry_run)
 
 
+def _detect_claude_code() -> tuple[bool, str | None]:
+    """Try `claude --version`. Returns (found, version_string).
+    Non-fatal: returns (False, None) if the binary isn't on PATH or
+    exits non-zero. Output format observed: "2.1.148 (Claude Code)".
+
+    Uses shutil.which() so PATHEXT is honored on Windows (npm installs
+    claude.cmd alongside claude.ps1 — subprocess can call the .cmd
+    directly, but not the .ps1).
+    """
+    claude = shutil.which("claude")
+    if not claude:
+        return False, None
+    try:
+        result = subprocess.run(
+            [claude, "--version"],
+            capture_output=True, text=True, timeout=5,
+        )
+    except (FileNotFoundError, OSError, subprocess.TimeoutExpired):
+        return False, None
+    if result.returncode != 0:
+        return False, None
+    return True, result.stdout.strip() or None
+
+
 def _resolve_paths() -> dict:
     src_dir = Path(__file__).resolve().parent
     home = Path.home()
@@ -73,6 +98,14 @@ def _install(paths: dict, force: bool, dry_run: bool) -> int:
     prefix = "would " if dry_run else ""
     print(f"{'(dry-run) ' if dry_run else ''}Installing claude-auto-save")
     print(f"  target: {paths['claude_dir']}")
+
+    # Detect Claude Code (informational; install proceeds either way).
+    found, version = _detect_claude_code()
+    if found:
+        print(f"  detected: {version}")
+    else:
+        print("  warn:    'claude' binary not on PATH - install proceeds, but the hook")
+        print("           won't fire until Claude Code is installed and PATH is updated.")
     print()
 
     # 1. Create directories

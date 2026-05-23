@@ -1,4 +1,4 @@
-Close out the current session cleanly. Capture context, then handle local cleanup (uncommitted changes, WSL, worktree).
+Close out the current session cleanly. Capture context, then handle local cleanup (uncommitted changes, worktree).
 
 ## Step 1: Save context
 
@@ -8,25 +8,14 @@ When that skill returns, continue with the cleanup steps below.
 
 ## Step 2: Handle uncommitted changes
 
-If there are uncommitted tracked changes (`save-context` Step 1 surfaces these but doesn't act on them):
+If there are uncommitted tracked changes (`/save-context` Step 1 surfaces these but doesn't act on them):
 1. Show the user what's uncommitted
 2. Ask: "Want me to commit these, stash them, or leave them?"
 3. Act on their decision
 
-## Step 3: Terminate WSL if running
+## Step 3: Terminate long-running side processes (optional, project-specific)
 
-```bash
-wsl --list --running 2>/dev/null
-```
-
-If Ubuntu is running, terminate and save the cooldown sentinel so the next WSL-using actor waits the required 80s (per `feedback_wsl_cooldown`). Per `apify-actors/CLAUDE.md`, each actor that uses WSL keeps its own `.wsl_terminate_ts` in its actor directory:
-
-```bash
-wsl --terminate Ubuntu
-echo "$(date +%s)" > apify-actors/<actor>/.wsl_terminate_ts
-```
-
-The cooldown is per-actor — each actor reads its own sentinel before launching. Write the timestamp to the directory of whatever actor you were running.
+If this project relies on a long-running shell or VM session that you started during this work (e.g., WSL, a dev container, a persistent SSH tunnel, a background dev server), wind it down now. Skip if none apply.
 
 ## Step 4: Exit worktree (if in one)
 

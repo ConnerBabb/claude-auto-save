@@ -87,8 +87,11 @@ The bigger sibling — runs `/save-context` first, then handles uncommitted chan
 ## Cross-platform notes
 
 - **Windows**: tested on PowerShell 5.1 + Python 3.x. Hook command uses the running Python interpreter's absolute path with forward slashes (avoids `\U` and `%c` style parser quirks in Claude Code's hook command pipeline).
-- **macOS / Linux**: should work out of the box. Installer uses `pathlib` and `sys.executable` to resolve paths correctly.
+- **Linux**: verified end-to-end on Ubuntu 22.04 (WSL) with Python 3.10. Installer writes `/usr/bin/python3 /home/<user>/.claude/hooks/check-context-headroom.py` into settings.json. Hook fire, idempotent re-install, and uninstall all confirmed working.
+- **macOS**: should work — installer uses `pathlib` and `sys.executable` which are platform-agnostic — but not yet verified on a Mac. Reports welcome.
 - **No external dependencies.** Stdlib only.
+
+The installer also runs `claude --version` to detect whether Claude Code is on PATH; if not, it warns but proceeds (the hook simply won't fire until Claude Code is installed).
 
 ## Uninstall
 
