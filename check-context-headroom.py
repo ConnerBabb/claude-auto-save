@@ -10,21 +10,26 @@ to find the most recent assistant turn's `usage` object, sums the real
 token counts, compares to a model-aware context window, and decides
 whether to fire.
 
-Sentinel semantics (two states):
+Sentinel semantics (two states with different behavior):
 
   status=pending   Hook fired but /save-context hasn't completed yet.
-                   Subsequent fires suppressed UNTIL the context grows
-                   REFIRE_AFTER_GROWTH tokens past the recorded value
-                   (in which case the save was probably ignored and we
-                   re-fire) OR until the context drops below the
-                   recorded value (compaction happened — re-fire fresh).
+                   The hook RE-NUDGES aggressively (every
+                   REFIRE_AFTER_GROWTH tokens of additional growth -
+                   default 1000) until either /save-context completes
+                   and writes the saved sentinel, or compaction shrinks
+                   the session. This is intentional pressure to push
+                   the model to invoke /save-context: the model often
+                   prioritizes the user's prompt over a soft system
+                   reminder, so we re-inject frequently until it acts.
 
-  status=saved     /save-context completed and wrote the sentinel via
-                   memory_write.py --mark-saved. Hook stays quiet for
-                   this session UNLESS the context drops below the
-                   recorded value (compaction — sentinel becomes
-                   invalid because the post-compaction session has
-                   fresh attention to fill back up).
+  status=saved     /save-context completed via memory_write.py and
+                   wrote the sentinel itself. Hook stays quiet for the
+                   rest of this fill-up cycle. No value in re-saving.
+
+Either sentinel is invalidated when current context_used drops below
+the recorded value (the only way that happens is auto-compaction
+shrinking cache_read_input_tokens back to the summary). On compaction
+the post-compaction session can fill up and get its own save.
 
 Sentinel file: <hook_dir>/.sentinels/<session_id>.flag (JSON).
 
@@ -46,10 +51,12 @@ from pathlib import Path
 # 1M window (~98.5% full). Tune via CLAUDE_HOOK_THRESHOLD env var.
 THRESHOLD_TOKENS = int(os.environ.get("CLAUDE_HOOK_THRESHOLD", "15000"))
 
-# If a pending sentinel exists and context has grown by this much past
-# the recorded fire point without a completion sentinel landing, assume
-# the previous nudge was ignored and re-fire.
-REFIRE_AFTER_GROWTH = int(os.environ.get("CLAUDE_HOOK_REFIRE_GROWTH", "50000"))
+# If a pending sentinel exists, re-fire the nudge every this many tokens
+# of additional growth. Aggressive default (1000) because models often
+# prioritize the user's prompt over a soft reminder; pounding the nudge
+# in every turn (each turn typically adds well over 1k tokens) until
+# /save-context completes is the main lever we have to overcome that.
+REFIRE_AFTER_GROWTH = int(os.environ.get("CLAUDE_HOOK_REFIRE_GROWTH", "1000"))
 
 # Context-window detection. See _resolve_context_limit().
 DEFAULT_CONTEXT_LIMIT = 1_000_000
@@ -93,19 +100,20 @@ def main() -> int:
             status = existing.get("status")
 
             if context_used < recorded_used:
-                # Context shrunk -> compaction since sentinel.
-                # Invalidate and fall through to fresh-fire logic.
+                # context_used dropped -> auto-compaction since sentinel.
+                # Invalidate so the post-compaction session can fill up
+                # and get its own save.
                 _safe_unlink(sentinel)
             elif status == "saved":
-                # Save already completed at/before this point. Nothing to do.
+                # Save already completed. Re-saving has no value.
                 return 0
             elif status == "pending":
-                if context_used <= recorded_used + REFIRE_AFTER_GROWTH:
-                    # Save in progress (or just nudged). Give it room.
+                if context_used < recorded_used + REFIRE_AFTER_GROWTH:
+                    # Within growth tolerance - don't pound it on the
+                    # very next turn after firing. Skip silently.
                     return 0
-                # Grew significantly past the fire point without completion;
-                # the model probably didn't act on the previous nudge.
-                # Fall through and re-fire.
+                # Past the refire threshold -> re-nudge (model probably
+                # deprioritized the previous one).
                 _safe_unlink(sentinel)
         else:
             # Unparseable sentinel (e.g. legacy text format); reset.
@@ -131,7 +139,7 @@ def main() -> int:
         context_limit=context_limit,
         context_used=context_used,
         session_id=session_id,
-        transcript_path=str(transcript),
+        transcript_path=transcript.as_posix(),
     ))
     return 0
 
@@ -251,27 +259,40 @@ def _build_nudge_output(
     transcript_path: str,
 ) -> str:
     hook_dir = Path(__file__).resolve().parent.as_posix()
+    pct_used = (context_used / context_limit * 100.0) if context_limit else 0.0
     nudge = (
-        f"CONTEXT NEAR LIMIT: roughly {headroom} tokens of headroom remain "
-        f"in a {context_limit}-token window (used: {context_used}). "
-        "Auto-compaction will fire if context fills up, which will "
-        "destroy the model's attention over the full conversation.\n\n"
-        "BEFORE responding to the user's latest message, invoke the "
-        "/save-context slash command (or the equivalent auto memory "
-        "system described in your system prompt if /save-context is not "
-        "available in this session). Use the current full attention to "
-        "extract non-obvious learnings, decisions, feedback, project "
-        "context, and references that would otherwise be lost when "
-        "compaction reduces the session to a summary.\n\n"
-        "When /save-context performs the memory writes, pass these "
-        "values to the bundled memory_write.py helper so it can mark "
-        "the session as saved (suppresses further nudges this session):\n"
-        f"    --session-id {session_id}\n"
+        "================================================================\n"
+        "  CRITICAL ALERT: CONTEXT NEAR LIMIT - IMMEDIATE ACTION REQUIRED\n"
+        "================================================================\n"
+        "\n"
+        f"  Context window: {context_limit:,} tokens\n"
+        f"  Current usage:  {context_used:,} tokens ({pct_used:.1f}% full)\n"
+        f"  Headroom left:  {headroom:,} tokens\n"
+        "\n"
+        "AUTO-COMPACTION IS IMMINENT. When the context fills, Claude Code\n"
+        "summarizes this entire conversation to free space. The model's\n"
+        "full attention over the conversation - including subtle decisions,\n"
+        "project context, failed approaches, and judgment-laden learnings -\n"
+        "will be PERMANENTLY LOST. The summary cannot recover that signal.\n"
+        "\n"
+        "MANDATORY: BEFORE responding to the user's latest message, invoke\n"
+        "the /save-context slash command. This is THE ONLY chance to extract\n"
+        "the high-value context before compaction destroys it. The save runs\n"
+        "while the full attention is still loaded; after compaction it is\n"
+        "too late.\n"
+        "\n"
+        "When /save-context invokes memory_write.py for the final write,\n"
+        "pass these so the saved sentinel lands and the hook stops nudging:\n"
+        "\n"
+        f"    --session-id      {session_id}\n"
         f"    --transcript-path {transcript_path}\n"
-        f"    helper path: {hook_dir}/memory_write.py\n\n"
-        "Then respond to the user's actual message normally.\n\n"
-        "Skip rote summarization - capture what is surprising, "
-        "non-obvious, or constraint-driven."
+        f"    helper:           {hook_dir}/memory_write.py\n"
+        "\n"
+        "After /save-context completes, respond to the user's actual\n"
+        "message normally.\n"
+        "\n"
+        "DO NOT SKIP. DO NOT DEFER. This is session-critical and the hook\n"
+        "WILL continue to re-fire on every prompt until /save-context runs."
     )
     output = {
         "hookSpecificOutput": {

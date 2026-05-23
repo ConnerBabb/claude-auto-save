@@ -13,9 +13,9 @@ If you're working in a large context window (especially 1M Opus), that's a lot o
 A `UserPromptSubmit` hook watches your transcript file. When remaining headroom drops below a configurable threshold (default: 15,000 tokens), it injects an instruction telling Claude to invoke the `/save-context` skill **on the next turn, while the full conversation is still in attention**. That extraction runs with the model's actual judgment over the entire context — then normal compaction proceeds afterward with the high-value notes already on disk.
 
 A per-session sentinel file controls when the hook re-fires:
-- **Saved sentinel** (written by `/save-context` when it completes via the bundled `memory_write.py` helper) suppresses further nudges for this session.
-- **Pending sentinel** (written by the hook itself when it fires) suppresses immediate re-firing while `/save-context` is supposed to be running. If context grows another 50k tokens past the fire point without a saved sentinel landing, the hook assumes the nudge was ignored and re-fires.
-- **Compaction reset.** If current `context_used` drops below the recorded value (the only way that happens is auto-compaction), the sentinel is invalidated and the hook fires fresh on the new post-compaction conversation. `session_id` doesn't change across compaction — only the in-attention context shrinks — so the same session can validly trigger multiple saves across its lifetime.
+- **Saved sentinel** (written by `/save-context` via the bundled `memory_write.py` helper when it completes) fully suppresses further nudges for this session.
+- **Pending sentinel** (written by the hook itself when it fires) gets re-fired **aggressively**: every additional 1000 tokens of context growth, the hook re-emits the nudge until `/save-context` actually runs. The nudge is a soft system reminder competing with the user's actual prompt, so the model often defers it — pounding it in on each turn (every turn typically adds well over 1k tokens) is the main lever to force compliance.
+- **Compaction reset.** If current `context_used` drops below the recorded value (the only way that happens is auto-compaction shrinking `cache_read_input_tokens` back to the summary), the sentinel is invalidated and the hook fires fresh on the new post-compaction conversation. `session_id` doesn't change across compaction — only the in-attention context shrinks — so the same session can validly trigger multiple saves across its lifetime.
 
 Concurrent same-project sessions are race-safe: all memory writes serialize through a lockfile on the memory directory.
 
@@ -64,17 +64,17 @@ The hook reads two environment variables. Set them in the `env` block of `~/.cla
 |---|---|---|
 | `CLAUDE_HOOK_CONTEXT_LIMIT` | `1000000` | Total context window in tokens. Defaults to 1M because current Opus uses a 1M window. Override with any explicit integer (e.g. `"200000"`), or set to `"auto"` to fall back to 200k unless the session has shown evidence of a larger window (any prior turn's input exceeded 200k, or the model string carries a `[1m]` flag). |
 | `CLAUDE_HOOK_THRESHOLD` | `15000` | Fire the nudge when remaining headroom drops below this many tokens. Lower = fires later (less safety margin). Higher = fires earlier (more room for the extraction turn itself). |
-| `CLAUDE_HOOK_REFIRE_GROWTH` | `50000` | If a pending sentinel exists and `context_used` has grown by more than this many tokens past the recorded fire point without `/save-context` having completed, the hook assumes the nudge was ignored and re-fires. |
+| `CLAUDE_HOOK_REFIRE_GROWTH` | `1000` | If a pending sentinel exists and `context_used` has grown by more than this many tokens past the recorded fire point without `/save-context` having completed, the hook assumes the nudge was deprioritized and re-fires. Default is aggressive (1k) so the nudge re-appears on essentially every turn until the model acts. Raise to e.g. `5000` if it feels naggy. |
 
 ## How it works
 
 1. On every `UserPromptSubmit`, the hook reads the transcript JSONL file (path supplied in the hook payload).
 2. It walks the tail of the file backwards to find the most recent assistant message's `usage` block (real API token counts: `input_tokens + cache_read_input_tokens + cache_creation_input_tokens + output_tokens`).
 3. **Sentinel check** at `<hook-dir>/.sentinels/<session_id>.flag`:
-   - If `status: saved` and `current_used >= recorded`: skip silently.
-   - If `current_used < recorded` (compaction happened): delete sentinel and proceed.
-   - If `status: pending` and `current_used <= recorded + REFIRE_GROWTH`: skip silently (save in progress).
-   - If `status: pending` and `current_used > recorded + REFIRE_GROWTH`: nudge was probably ignored — re-fire.
+   - If `current_used < recorded` (compaction happened): delete sentinel and proceed to threshold check.
+   - If `status: saved`: skip silently (no value in re-saving).
+   - If `status: pending` and `current_used < recorded + REFIRE_GROWTH` (default 1k): skip silently (give the previous nudge one turn to land).
+   - If `status: pending` and `current_used >= recorded + REFIRE_GROWTH`: delete sentinel and re-fire (model deprioritized the nudge — pound it again).
 4. If the sentinel allows firing and `headroom < threshold`: write a *pending* sentinel and emit a `hookSpecificOutput.additionalContext` JSON nudge to stdout.
 5. Claude Code injects the nudge into the next turn. Claude invokes `/save-context`, which builds a plan and pipes it to `memory_write.py`. The helper takes a lockfile on the memory directory, writes the entries atomically, updates `MEMORY.md` dedup-aware, then writes the *saved* sentinel — all under the same lock.
 6. Subsequent hook fires in this session see the *saved* sentinel and stay quiet, unless compaction or significant growth resets it.
