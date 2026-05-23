@@ -37,8 +37,8 @@ THRESHOLD_TOKENS = int(os.environ.get("CLAUDE_HOOK_THRESHOLD", "15000"))
 #      DEFAULT_CONTEXT_LIMIT, the session must be on a larger variant.
 #   3. Otherwise default to DEFAULT_CONTEXT_LIMIT.
 # The API response's `message.model` field comes back as plain
-# `claude-opus-4-7` even when the [1m] beta header is in use, so the
-# model string alone is not a reliable signal.
+# `claude-opus-4-7` even when the [1m] flag for the 1M context window
+# is in use, so the model string alone is not a reliable signal.
 DEFAULT_CONTEXT_LIMIT = 200_000
 ONE_MILLION_CONTEXT_LIMIT = 1_000_000
 

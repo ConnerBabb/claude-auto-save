@@ -6,7 +6,7 @@ A Claude Code hook + skill package that automatically extracts learnings, decisi
 
 Claude Code's auto-compaction is lossy. When your context fills up, Claude summarizes the conversation to free space — but summarization can't recover the rich attention pathways the model had while the full conversation was loaded. Anything subtle, surprising, or judgment-laden that wasn't explicitly highlighted gets flattened.
 
-If you're working in a large context window (especially the 1M Opus beta), that's a lot of valuable signal lost on every compaction.
+If you're working in a large context window (especially 1M Opus), that's a lot of valuable signal lost on every compaction.
 
 ## What this does
 
@@ -55,7 +55,7 @@ The hook reads two environment variables. Set them in the `env` block of `~/.cla
 
 | Variable | Default | What it does |
 |---|---|---|
-| `CLAUDE_HOOK_CONTEXT_LIMIT` | (auto) | Total context window in tokens. The hook tries to detect this from usage history (assumes 1M if any turn has exceeded 200k), but if you're consistently running the 1M-context Opus beta, set this explicitly to `1000000` so the hook fires near the right boundary from the start of every session. |
+| `CLAUDE_HOOK_CONTEXT_LIMIT` | (auto) | Total context window in tokens. The hook tries to detect this from usage history (assumes 1M if any turn has exceeded 200k), but if you're consistently running 1M-context Opus, set this explicitly to `1000000` so the hook fires near the right boundary from the start of every session. |
 | `CLAUDE_HOOK_THRESHOLD` | `15000` | Fire the nudge when remaining headroom drops below this many tokens. Lower = fires later (less safety margin). Higher = fires earlier (more room for the extraction turn itself). |
 
 ## How it works

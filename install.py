@@ -260,7 +260,7 @@ def _print_next_steps(settings_path: Path) -> None:
     print()
     print("Optional next steps:")
     print()
-    print("  1. If you're on Opus 4.7 with the 1M-context beta, tell the hook")
+    print("  1. If you're on Opus 4.7 with the 1M context window, tell the hook")
     print("     to assume a 1M window by adding to the 'env' block in:")
     print(f"        {settings_path}")
     print('        "env": {')
