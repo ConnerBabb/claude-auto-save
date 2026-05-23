@@ -30,7 +30,7 @@ HOOK_SCRIPT = "check-context-headroom.py"
 # Substring used to match existing hook entries pointing at any prior
 # version of this script (e.g., a legacy PowerShell .ps1 install).
 HOOK_MATCH_TOKEN = "check-context-headroom"
-SKILL_FILES = ("save-context.md", "close-session.md")
+SKILL_FILES = ("save-context.md",)
 
 
 def main() -> int:

@@ -26,7 +26,7 @@ python install.py
 
 The installer:
 - Copies `check-context-headroom.py` to `~/.claude/hooks/`
-- Copies `save-context.md` and `close-session.md` to `~/.claude/commands/` (skipped if already present; pass `--force` to overwrite)
+- Copies `save-context.md` to `~/.claude/commands/` (skipped if already present; pass `--force` to overwrite)
 - Adds a `UserPromptSubmit` hook entry to `~/.claude/settings.json`, merging with your existing config rather than clobbering it
 - Resolves the absolute Python path and script path at install time so the config has no path-expansion surprises
 
@@ -38,7 +38,6 @@ It's idempotent — re-running won't duplicate hook entries.
 |---|---|---|
 | `check-context-headroom.py` | `~/.claude/hooks/` | The hook itself |
 | `save-context.md` | `~/.claude/commands/` | The `/save-context` slash command — session review + memory writes |
-| `close-session.md` | `~/.claude/commands/` | The `/close-session` slash command — runs `/save-context`, then handles uncommitted changes and worktree exit |
 | (hook entry) | `~/.claude/settings.json` | `UserPromptSubmit` registration |
 
 ## Configuration
@@ -69,20 +68,17 @@ The hook reads two environment variables. Set them in the `env` block of `~/.cla
 
 To force a re-fire mid-session, delete the matching sentinel file.
 
-## Bundled skills
+## The bundled skill: `/save-context`
 
-### `/save-context`
+Reviews the session, surfaces follow-ups and uncommitted state, and asks before writing memories. Steps:
 
-Reviews the session, asks the user about open follow-ups, and writes memories. Does **not** touch uncommitted changes, WSL state, or worktrees — those are `/close-session`'s job. Steps:
-
+0. Skip-if-nothing-material early exit
 1. Session review — what was accomplished, uncommitted changes, unpushed commits, docs that drifted, follow-ups, things to remember
-2. Create GitHub Issues for follow-ups (user-approved)
+2. Create GitHub Issues for follow-ups (user-approved, requires `gh` CLI)
 3. Documentation updates that drifted from reality
-4. Save memories per the auto-memory rules in your `CLAUDE.md`
+4. Propose memory entries, wait for user approval, then write to the auto-memory directory using the bundled frontmatter conventions
 
-### `/close-session`
-
-The bigger sibling — runs `/save-context` first, then handles uncommitted changes (commit / stash / leave), terminates WSL, and exits the worktree if applicable.
+Out of scope for this skill: uncommitted code changes, WSL state, and worktree exit. Handle those separately if needed.
 
 ## Cross-platform notes
 

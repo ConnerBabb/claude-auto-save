@@ -1,4 +1,4 @@
-Save context from the current session — review what was done, capture anything important to memory or issue tracking, and update docs that drifted. Does NOT touch uncommitted changes, WSL state, or worktrees — that's `/close-session`'s job. If you also need to act on uncommitted state, exit a worktree, or terminate WSL, use `/close-session` (it invokes this skill first, then handles cleanup).
+Save context from the current session — review what was done, capture anything important to memory or issue tracking, and update docs that drifted. Does NOT touch uncommitted changes, WSL state, or worktrees — those are out of scope for this skill. Handle them separately if needed.
 
 ## Step 0: Is there anything worth saving?
 
