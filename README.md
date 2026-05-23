@@ -55,7 +55,7 @@ The hook reads two environment variables. Set them in the `env` block of `~/.cla
 
 | Variable | Default | What it does |
 |---|---|---|
-| `CLAUDE_HOOK_CONTEXT_LIMIT` | (auto) | Total context window in tokens. The hook tries to detect this from usage history (assumes 1M if any turn has exceeded 200k), but if you're consistently running 1M-context Opus, set this explicitly to `1000000` so the hook fires near the right boundary from the start of every session. |
+| `CLAUDE_HOOK_CONTEXT_LIMIT` | `1000000` | Total context window in tokens. Defaults to 1M because current Opus uses a 1M window. Override with any explicit integer (e.g. `"200000"`), or set to `"auto"` to fall back to 200k unless the session has shown evidence of a larger window (any prior turn's input exceeded 200k, or the model string carries a `[1m]` flag). |
 | `CLAUDE_HOOK_THRESHOLD` | `15000` | Fire the nudge when remaining headroom drops below this many tokens. Lower = fires later (less safety margin). Higher = fires earlier (more room for the extraction turn itself). |
 
 ## How it works

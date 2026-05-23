@@ -32,15 +32,19 @@ from pathlib import Path
 THRESHOLD_TOKENS = int(os.environ.get("CLAUDE_HOOK_THRESHOLD", "15000"))
 
 # Context-window detection:
-#   1. If CLAUDE_HOOK_CONTEXT_LIMIT is set, use it (most reliable).
-#   2. Otherwise, if any recorded usage in the transcript has exceeded
-#      DEFAULT_CONTEXT_LIMIT, the session must be on a larger variant.
-#   3. Otherwise default to DEFAULT_CONTEXT_LIMIT.
+#   1. If CLAUDE_HOOK_CONTEXT_LIMIT is set to a positive integer, use it.
+#   2. If CLAUDE_HOOK_CONTEXT_LIMIT is "auto", use the heuristic:
+#      - return DEFAULT_CONTEXT_LIMIT (1M) if any prior turn's input
+#        side exceeded AUTO_FALLBACK_LIMIT (200k), OR if the model
+#        string carries a [1m] flag
+#      - otherwise return AUTO_FALLBACK_LIMIT (200k)
+#   3. If CLAUDE_HOOK_CONTEXT_LIMIT is unset, default to
+#      DEFAULT_CONTEXT_LIMIT (1M). The default matches current Opus.
 # The API response's `message.model` field comes back as plain
-# `claude-opus-4-7` even when the [1m] flag for the 1M context window
-# is in use, so the model string alone is not a reliable signal.
-DEFAULT_CONTEXT_LIMIT = 200_000
-ONE_MILLION_CONTEXT_LIMIT = 1_000_000
+# `claude-opus-4-7` even when the 1M context window is in use, so the
+# model string alone is not a reliable signal for heuristic mode.
+DEFAULT_CONTEXT_LIMIT = 1_000_000
+AUTO_FALLBACK_LIMIT = 200_000
 
 # How many tail lines of the transcript to scan when looking for the
 # most recent assistant `usage` block.
@@ -141,12 +145,15 @@ def _scan_transcript(transcript: Path):
 
 def _resolve_context_limit(model: str | None, max_observed_input: int) -> int:
     env_limit = os.environ.get("CLAUDE_HOOK_CONTEXT_LIMIT")
-    if env_limit and env_limit.isdigit():
-        return int(env_limit)
-    if max_observed_input > DEFAULT_CONTEXT_LIMIT:
-        return ONE_MILLION_CONTEXT_LIMIT
-    if model and "[1m]" in model:
-        return ONE_MILLION_CONTEXT_LIMIT
+    if env_limit:
+        if env_limit.isdigit():
+            return int(env_limit)
+        if env_limit.lower() == "auto":
+            if max_observed_input > AUTO_FALLBACK_LIMIT:
+                return DEFAULT_CONTEXT_LIMIT
+            if model and "[1m]" in model:
+                return DEFAULT_CONTEXT_LIMIT
+            return AUTO_FALLBACK_LIMIT
     return DEFAULT_CONTEXT_LIMIT
 
 
