@@ -146,7 +146,7 @@ def _scan_transcript(transcript: Path):
 def _resolve_context_limit(model: str | None, max_observed_input: int) -> int:
     env_limit = os.environ.get("CLAUDE_HOOK_CONTEXT_LIMIT")
     if env_limit:
-        if env_limit.isdigit():
+        if env_limit.isdigit() and int(env_limit) > 0:
             return int(env_limit)
         if env_limit.lower() == "auto":
             if max_observed_input > AUTO_FALLBACK_LIMIT:
