@@ -15,7 +15,8 @@ Review the conversation history and identify:
 3. **Unpushed commits** — run `git log --oneline @{upstream}..HEAD`. Don't suppress stderr — if there's no upstream tracking branch, the "fatal: no upstream configured" output is actionable info (the branch hasn't been pushed yet). Skip if not in a git repo.
 4. **Documentation updates needed** — do CLAUDE.md, README, or inline docs need updating to reflect what changed? Docs should match what's actually in the code.
 5. **Follow-up work** — anything deferred, noted as "TODO", "follow-up", or "later" during the session
-6. **Things to remember** — decisions made, patterns established, lessons learned, or user preferences observed that should be saved to memory
+6. **Failed approaches and dead ends** — what was tried that didn't work, why it didn't work, and the workaround that succeeded (if any). High-value for future-you to avoid re-debugging. Capture as `reference` memories in Step 4.
+7. **Things to remember** — decisions made, patterns established, lessons learned, or user preferences observed that should be saved to memory
 
 Present all findings to the user before taking action in any later step.
 

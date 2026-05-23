@@ -16,13 +16,13 @@ The hook fires **once per session** via a sentinel file, so it doesn't nag.
 
 ## Install
 
-Requires Python 3.8+ (already present on virtually every dev machine).
+Requires Python 3.8+ (already present on virtually every dev machine). Windows users: run this from Git Bash (it ships with Git for Windows) or WSL.
 
 ```bash
-git clone https://github.com/ConnerBabb/claude-auto-save.git
-cd claude-auto-save
-python install.py
+git clone https://github.com/ConnerBabb/claude-auto-save.git && cd claude-auto-save && python3 install.py
 ```
+
+If `python3` isn't on your `PATH`, use `python` instead.
 
 The installer:
 - Copies `check-context-headroom.py` to `~/.claude/hooks/`
