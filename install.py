@@ -27,6 +27,9 @@ import sys
 from pathlib import Path
 
 HOOK_SCRIPT = "check-context-headroom.py"
+# Other Python helpers that ship next to the hook script and are
+# invoked by the /save-context skill at runtime.
+COMPANION_SCRIPTS = ("memory_write.py",)
 # Substring used to match existing hook entries pointing at any prior
 # version of this script (e.g., a legacy PowerShell .ps1 install).
 HOOK_MATCH_TOKEN = "check-context-headroom"
@@ -115,10 +118,20 @@ def _install(paths: dict, force: bool, dry_run: bool) -> int:
             if not dry_run:
                 d.mkdir(parents=True, exist_ok=True)
 
-    # 2. Copy hook script
+    # 2. Copy hook script and companion helpers
     print(f"  {prefix}copy   {HOOK_SCRIPT}  ->  {paths['hook_script_dst']}")
     if not dry_run:
         shutil.copy2(paths["hook_script_src"], paths["hook_script_dst"])
+
+    for companion in COMPANION_SCRIPTS:
+        src = paths["src_dir"] / companion
+        if not src.is_file():
+            print(f"  -      skip   {companion}  (not in package)")
+            continue
+        dst = paths["hooks_dir"] / companion
+        print(f"  {prefix}copy   {companion}  ->  {dst}")
+        if not dry_run:
+            shutil.copy2(src, dst)
 
     # 3. Copy skill files (skip existing unless --force)
     for name in SKILL_FILES:
@@ -235,11 +248,18 @@ def _uninstall(paths: dict, dry_run: bool) -> int:
                 if not dry_run:
                     paths["settings"].write_text(json.dumps(config, indent=2), encoding="utf-8")
 
-    # 2. Remove hook script
+    # 2. Remove hook script and companions
     if paths["hook_script_dst"].exists():
         print(f"  {prefix}delete {paths['hook_script_dst']}")
         if not dry_run:
             paths["hook_script_dst"].unlink()
+
+    for companion in COMPANION_SCRIPTS:
+        dst = paths["hooks_dir"] / companion
+        if dst.exists():
+            print(f"  {prefix}delete {dst}")
+            if not dry_run:
+                dst.unlink()
 
     # 3. Skill files are user-editable; do NOT auto-delete.
     print(f"  -      skill files left in place ({paths['commands_dir']}) - remove manually if desired")

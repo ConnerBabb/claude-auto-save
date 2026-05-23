@@ -63,34 +63,66 @@ Ask the user to confirm — per-entry or batch ("approve all"). Do **not** skip 
 
 For each approved entry, check `MEMORY.md` and grep the memory directory for an existing entry on the same topic. **Prefer updating an existing memory in place over creating a duplicate.** If an existing entry covers similar ground, edit it rather than adding a new file.
 
-### 4c. Write the files
+### 4c. Build a plan and call the bundled helper
 
-The memory directory is whatever your environment's auto-memory rules specify. On Claude Code's default setup, this is `~/.claude/projects/<project-id>/memory/` where `<project-id>` is the encoded CWD path (e.g., `C--Users-Owner-myproject`). Create the directory if it doesn't exist.
+All memory writes go through the bundled `memory_write.py` helper. It acquires a lockfile on the memory directory, performs all writes atomically (temp file + rename), updates `MEMORY.md` dedup-aware, and (if invoked by a hook nudge) writes the per-session "saved" sentinel so the hook stops nudging.
 
-Each memory file uses this frontmatter:
+The helper lives next to the hook script. On Claude Code's default setup that's `~/.claude/hooks/memory_write.py`. If the hook fired for this session, the nudge text in your current context will tell you the exact path plus the `--session-id` and `--transcript-path` values to use.
+
+**Build a plan as JSON** with every entry you got approval to write:
+
+```json
+{
+  "entries": [
+    {
+      "name": "user_dev_environment",
+      "body": "---\nname: user-dev-environment\ndescription: ...\nmetadata:\n  type: user\n---\n\n..."
+    }
+  ],
+  "index_entries": [
+    "- [Dev environment](user_dev_environment.md) - one-line hook"
+  ]
+}
+```
+
+**Pipe the plan into the helper.** Two cases:
+
+1. **Triggered by the hook nudge** (preferred — also marks the session saved so the hook stops nudging):
+
+   ```bash
+   python ~/.claude/hooks/memory_write.py \
+       --memory-dir ~/.claude/projects/<project-id>/memory \
+       --session-id <session_id_from_nudge> \
+       --transcript-path <transcript_path_from_nudge> < plan.json
+   ```
+
+2. **Run manually outside a hook fire** (omit --session-id/--transcript-path; the helper writes memories only):
+
+   ```bash
+   python ~/.claude/hooks/memory_write.py \
+       --memory-dir ~/.claude/projects/<project-id>/memory < plan.json
+   ```
+
+The `<project-id>` is the encoded CWD path your environment's auto-memory rules specify (typically `C--Users-Owner-<project>` on Windows or similar). The helper creates the directory if it doesn't exist.
+
+### 4d. Memory file format and conventions
+
+Each `entry.body` in the plan must include this frontmatter:
 
 ```markdown
 ---
 name: {{short-kebab-case-slug}}
-description: {{one-line summary used to decide relevance in future conversations — be specific}}
+description: {{one-line summary used to decide relevance in future conversations - be specific}}
 metadata:
   type: {{user | feedback | project | reference}}
 ---
 
-{{body — for feedback/project types, lead with the rule/fact, then **Why:** and **How to apply:** lines}}
+{{body. For feedback/project types, lead with the rule/fact, then **Why:** and **How to apply:** lines.}}
 ```
 
-Link related memories with `[[other-name]]` references, where `other-name` matches another file's `name:` slug. Link liberally — a `[[link]]` to an unwritten memory marks it as something worth writing later.
+Link related memories with `[[other-name]]` references, where `other-name` matches another file's `name:` slug. Link liberally — an `[[link]]` to an unwritten memory marks it as something worth writing later.
 
-### 4d. Update the index
-
-`MEMORY.md` (in the same directory) is a one-line-per-entry index, no frontmatter. Keep it under ~200 lines (content past that may be truncated when loaded into future sessions).
-
-```markdown
-- [Title](filename.md) — one-line hook
-```
-
-Add or update entries as needed.
+`index_entries` follow the format `- [Title](filename.md) - one-line hook`. Keep `MEMORY.md` under ~200 lines total (content past that may be truncated when loaded into future sessions). The helper dedups, so re-running with the same line is a no-op.
 
 ### Memory types — what goes where
 
