@@ -19,7 +19,7 @@ The hook fires **once per session** via a sentinel file, so it doesn't nag.
 Requires Python 3.8+ (already present on virtually every dev machine).
 
 ```bash
-git clone https://github.com/<you>/claude-auto-save.git
+git clone https://github.com/ConnerBabb/claude-auto-save.git
 cd claude-auto-save
 python install.py
 ```
