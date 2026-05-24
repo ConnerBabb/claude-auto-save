@@ -19,6 +19,8 @@ A per-session sentinel file controls when the hook re-fires:
 
 Concurrent same-project sessions are race-safe: all memory writes serialize through a lockfile on the memory directory.
 
+**Escape hatch.** If a session genuinely has nothing material worth saving (quick Q&A, throwaway debug loop, etc.) and you just want the nudge to stop, invoke the bundled `/skip-save` slash command. It writes the saved sentinel without any memory writes. Skip-for-now, not skip-forever — if compaction happens later, the sentinel resets and the hook gets a fresh chance.
+
 ## Install
 
 Requires Python 3.8+ (already present on virtually every dev machine). Windows users: run this from Git Bash (it ships with Git for Windows) or WSL.
@@ -45,6 +47,7 @@ It's idempotent — re-running won't duplicate hook entries.
 | `check-context-headroom.py` | `~/.claude/hooks/` | The `UserPromptSubmit` hook |
 | `memory_write.py` | `~/.claude/hooks/` | Atomic locked memory-write helper invoked by `/save-context`; also writes the saved-sentinel on completion |
 | `save-context.md` | `~/.claude/commands/` | The `/save-context` slash command — session review + memory writes |
+| `skip-save.md` | `~/.claude/commands/` | The `/skip-save` slash command — dismiss the nudge without saving (escape hatch for sessions with nothing material worth saving) |
 | (hook entry) | `~/.claude/settings.json` | `UserPromptSubmit` registration |
 
 ## Configuration

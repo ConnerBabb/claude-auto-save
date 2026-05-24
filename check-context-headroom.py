@@ -291,8 +291,16 @@ def _build_nudge_output(
         "After /save-context completes, respond to the user's actual\n"
         "message normally.\n"
         "\n"
-        "DO NOT SKIP. DO NOT DEFER. This is session-critical and the hook\n"
-        "WILL continue to re-fire on every prompt until /save-context runs."
+        "ESCAPE HATCH: If you have reviewed this session and determined\n"
+        "there is genuinely nothing material worth saving (a quick Q&A,\n"
+        "a throwaway debug loop, etc.), invoke the /skip-save slash\n"
+        "command (or run the helper above with --mark-saved-only and the\n"
+        "session-id/transcript-path values). The hook will stop nudging\n"
+        "for this session.\n"
+        "\n"
+        "DO NOT SKIP without explicit reason. DO NOT DEFER. This is\n"
+        "session-critical and the hook WILL continue to re-fire on every\n"
+        "prompt until either /save-context or /skip-save runs."
     )
     output = {
         "hookSpecificOutput": {
