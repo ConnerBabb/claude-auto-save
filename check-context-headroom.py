@@ -52,14 +52,15 @@ from pathlib import Path
 # --- Config --------------------------------------------------------------
 
 # Trigger the nudge when remaining headroom drops below this many tokens.
-# Default 60000 budgets for two things that have to fit between the fire
-# point and the actual context ceiling:
-#   - ~33000 tokens that Claude Code reserves as a compaction buffer
-#     (the actual auto-compaction triggers below the nominal limit)
-#   - ~25000 tokens the /save-context skill itself consumes while it
-#     runs (skill body, session review output, plan JSON, helper output)
-# Tune via CLAUDE_HOOK_THRESHOLD env var.
-THRESHOLD_TOKENS = int(os.environ.get("CLAUDE_HOOK_THRESHOLD", "60000"))
+# Default 30000 budgets ~25k for the /save-context skill itself (skill
+# body, session review output, plan JSON, helper output) plus a small
+# safety margin. Recent Claude Code lets context fill all the way to
+# the nominal limit before auto-compacting (no longer the ~33k
+# compaction reservation observed in older versions), so we only need
+# to budget for the save itself. Bump higher if /save-context runs
+# long for your typical session or if you're on an older Claude Code
+# where compaction triggers early. Tune via CLAUDE_HOOK_THRESHOLD env var.
+THRESHOLD_TOKENS = int(os.environ.get("CLAUDE_HOOK_THRESHOLD", "30000"))
 
 # If a pending sentinel exists, re-fire the nudge every this many tokens
 # of additional growth. Aggressive default (1000) because models often
