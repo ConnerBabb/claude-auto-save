@@ -19,7 +19,7 @@ A per-session sentinel file controls when the hook re-fires:
 
 Concurrent same-project sessions are race-safe: all memory writes serialize through a lockfile on the memory directory.
 
-**Escape hatch.** If a session genuinely has nothing material worth saving (quick Q&A, throwaway debug loop, etc.) and you just want the nudge to stop, invoke the bundled `/skip-save` slash command. It writes the saved sentinel without any memory writes. Skip-for-now, not skip-forever — if compaction happens later, the sentinel resets and the hook gets a fresh chance.
+**Escape hatch built into `/save-context`.** The skill's Step 0 asks whether anything material happened this session. If the model determines the answer is "nothing notable" (a quick Q&A, throwaway debug loop, etc.), it short-circuits to Step 5 which marks the session saved without any memory writes. The hook stops nudging — *skip-for-now, not skip-forever* (post-compaction the sentinel resets and the hook gets a fresh chance).
 
 ## Install
 
@@ -46,8 +46,7 @@ It's idempotent — re-running won't duplicate hook entries.
 |---|---|---|
 | `check-context-headroom.py` | `~/.claude/hooks/` | The `UserPromptSubmit` hook |
 | `memory_write.py` | `~/.claude/hooks/` | Atomic locked memory-write helper invoked by `/save-context`; also writes the saved-sentinel on completion |
-| `save-context.md` | `~/.claude/commands/` | The `/save-context` slash command — session review + memory writes |
-| `skip-save.md` | `~/.claude/commands/` | The `/skip-save` slash command — dismiss the nudge without saving (escape hatch for sessions with nothing material worth saving) |
+| `save-context.md` | `~/.claude/commands/` | The `/save-context` slash command — session review, memory writes, or short-circuit if nothing material |
 | (hook entry) | `~/.claude/settings.json` | `UserPromptSubmit` registration |
 
 ## Configuration

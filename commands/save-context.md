@@ -1,10 +1,19 @@
 Save context from the current session — review what was done, capture anything important to memory or issue tracking, and update docs that drifted. Does NOT touch uncommitted changes, WSL state, or worktrees — those are out of scope for this skill. Handle them separately if needed.
 
-## Step 0: Is there anything worth saving?
+## Step 0: Is there anything worth saving? (Escape hatch lives here)
 
-Before walking the full flow, quickly assess: did anything *material* happen this session? A short read-only Q&A, a single trivial edit, or a tiny doc tweak usually doesn't warrant a full save-context pass.
+Before walking the full flow, quickly assess: did anything *material* happen this session? A short read-only Q&A, a trivial edit, a throwaway debug loop, or a tiny doc tweak usually doesn't warrant a full save-context pass.
 
-If the answer is "nothing notable," tell the user that explicitly, jump to **Step 5** to mark the session saved (so the hook stops nudging), then stop. Don't manufacture artifacts. Otherwise continue.
+**If the answer is genuinely "nothing notable," this is your escape hatch.** Tell the user that explicitly, jump to **Step 5** to mark the session saved (which suppresses further hook nudges), then stop. Don't manufacture artifacts; don't pad the memory dir with empty observations just to look thorough.
+
+**But do not use the escape to dodge real work.** If the session contains *any* of the following, it is NOT nothing-notable and you must continue through the full flow:
+- A user correction, preference, or workflow rule you didn't know before
+- A non-obvious decision you reached
+- A failed approach + the working alternative
+- A surprising discovery about the codebase, tooling, or environment
+- A reference to an external system you'd want to find again
+
+Otherwise continue to Step 1.
 
 ## Step 1: Session review
 
