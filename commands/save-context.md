@@ -17,7 +17,20 @@ Otherwise continue to Step 1.
 
 ## Step 1: Session review
 
-Review the conversation history and identify:
+**First action — quiet the hook.** Before doing the review itself, immediately invoke the helper in in-progress mode so the hook stops nudging while this skill runs (otherwise the nudge re-injects on every turn during the save and bloats the context). The hook's nudge text in your current context contains the values:
+
+```bash
+python ~/.claude/hooks/memory_write.py \
+    --mark-in-progress \
+    --session-id <session_id_from_nudge> \
+    --transcript-path <transcript_path_from_nudge>
+```
+
+If this skill was invoked manually (no hook nudge in context), skip the in-progress write — there's nothing pending to silence.
+
+Then proceed with the review proper.
+
+Then review the conversation history and identify:
 
 1. **What was accomplished** — PRs created/merged, features built, bugs fixed
 2. **Uncommitted code changes** — run `git status --short` and `git diff --stat`. Skip these if the CWD isn't a git repo. Read-only here — don't act on uncommitted state, surface it so the user knows what's outstanding.

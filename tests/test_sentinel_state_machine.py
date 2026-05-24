@@ -202,6 +202,38 @@ def case_saved_shrunk_resets_and_fires(tmp: Path) -> tuple[bool, str]:
     return True, ""
 
 
+def case_in_progress_growth_skips(tmp: Path) -> tuple[bool, str]:
+    # in_progress should silence the hook during the save itself, even
+    # if context has grown past the refire-growth tolerance.
+    tx = tmp / "tx.jsonl"
+    make_transcript(tx, 950_000)
+    sentinel_dir = tmp / ".sentinels"
+    write_sentinel(sentinel_dir, "s7", "in_progress", 890_000)
+    code, out, err = run_hook("s7", tx, sentinel_dir, context_limit="960000")
+    if fired(out):
+        return False, f"in_progress sentinel should suppress fire; got {out!r}"
+    s = read_sentinel(sentinel_dir, "s7")
+    if not s or s["status"] != "in_progress":
+        return False, f"in_progress sentinel should be preserved; got {s}"
+    return True, ""
+
+
+def case_in_progress_shrunk_resets_and_fires(tmp: Path) -> tuple[bool, str]:
+    # If compaction somehow happens while in_progress is set, the
+    # sentinel still resets via the shrinkage check.
+    tx = tmp / "tx.jsonl"
+    make_transcript(tx, 100_000)
+    sentinel_dir = tmp / ".sentinels"
+    write_sentinel(sentinel_dir, "s8", "in_progress", 900_000)
+    code, out, err = run_hook("s8", tx, sentinel_dir, context_limit="110000")
+    if not fired(out):
+        return False, f"in_progress + compaction should reset and fire; got {out!r}, err={err!r}"
+    s = read_sentinel(sentinel_dir, "s8")
+    if not s or s["status"] != "pending":
+        return False, f"after re-fire the sentinel should be pending again; got {s}"
+    return True, ""
+
+
 CASES = [
     ("no sentinel + low headroom -> fires + writes pending", case_no_sentinel_high_context),
     ("pending + small growth -> skip", case_pending_small_growth_skips),
@@ -209,6 +241,8 @@ CASES = [
     ("pending + context shrunk -> compaction reset + fire", case_pending_shrunk_resets_and_fires),
     ("saved + growing context -> skip", case_saved_growing_context_skips),
     ("saved + context shrunk -> compaction reset + fire", case_saved_shrunk_resets_and_fires),
+    ("in_progress + growth -> skip (no pound during save)", case_in_progress_growth_skips),
+    ("in_progress + context shrunk -> compaction reset + fire", case_in_progress_shrunk_resets_and_fires),
 ]
 
 

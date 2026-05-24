@@ -24,7 +24,9 @@ Usage:
     python memory_write.py --memory-dir <dir> --session-id <id> \\
         --transcript-path <jsonl> < plan.json
     python memory_write.py --mark-saved-only --session-id <id> \\
-        --transcript-path <jsonl>           # no plan, no memory writes
+        --transcript-path <jsonl>            # no plan, sentinel as 'saved'
+    python memory_write.py --mark-in-progress --session-id <id> \\
+        --transcript-path <jsonl>            # no plan, sentinel as 'in_progress'
 
 Plan schema (stdin JSON):
     {
@@ -175,22 +177,25 @@ def compute_context_used(transcript: Path) -> int | None:
     )
 
 
-def write_saved_sentinel(
+def write_sentinel(
     sentinel_dir: Path,
     session_id: str,
     transcript_path: Path,
+    status: str,
     model: str | None = None,
 ) -> int | None:
-    """Compute context_used from the transcript and write the saved
-    sentinel. Returns the recorded context_used, or None if computation
-    failed."""
+    """Compute context_used from the transcript and write the sentinel
+    with the given status ('saved' or 'in_progress'). Returns the
+    recorded context_used, or None if computation failed."""
+    if status not in ("saved", "in_progress"):
+        raise ValueError(f"invalid sentinel status: {status!r}")
     context_used = compute_context_used(transcript_path)
     if context_used is None:
         return None
     sentinel_dir.mkdir(parents=True, exist_ok=True)
     sentinel = sentinel_dir / f"{session_id}.flag"
     data = {
-        "status": "saved",
+        "status": status,
         "session_id": session_id,
         "model": model,
         "context_used": context_used,
@@ -200,34 +205,47 @@ def write_saved_sentinel(
     return context_used
 
 
+# Back-compat alias for callers that still expect the old name.
+def write_saved_sentinel(sentinel_dir, session_id, transcript_path, model=None):
+    return write_sentinel(sentinel_dir, session_id, transcript_path, "saved", model)
+
+
 # --- CLI -----------------------------------------------------------------
 
 def main() -> int:
     p = argparse.ArgumentParser(description="Safe memory writes + completion sentinel for /save-context.")
-    p.add_argument("--memory-dir", help="Memory directory to write into (required unless --mark-saved-only).")
-    p.add_argument("--session-id", help="Session ID. If provided with --transcript-path, also writes the saved sentinel.")
-    p.add_argument("--transcript-path", help="Transcript JSONL path (used to compute context_used_at_save).")
+    p.add_argument("--memory-dir", help="Memory directory to write into (required unless --mark-saved-only / --mark-in-progress).")
+    p.add_argument("--session-id", help="Session ID. If provided with --transcript-path, also writes the saved sentinel after memory writes.")
+    p.add_argument("--transcript-path", help="Transcript JSONL path (used to compute context_used).")
     p.add_argument("--sentinel-dir", help="Directory for sentinel files. Defaults to <script_dir>/.sentinels.")
     p.add_argument("--mark-saved-only", action="store_true",
-                   help="Skip memory writes; just mark this session saved (requires --session-id + --transcript-path).")
+                   help="Skip memory writes; mark this session saved (requires --session-id + --transcript-path).")
+    p.add_argument("--mark-in-progress", action="store_true",
+                   help="Skip memory writes; mark this session as in-progress so the hook stops nudging while /save-context runs (requires --session-id + --transcript-path).")
     args = p.parse_args()
 
     sentinel_dir = (Path(args.sentinel_dir).expanduser().resolve()
                     if args.sentinel_dir
                     else Path(__file__).resolve().parent / ".sentinels")
 
-    # Mark-saved-only mode: skip plan + memory writes entirely.
-    if args.mark_saved_only:
-        if not (args.session_id and args.transcript_path):
-            print("error: --mark-saved-only requires --session-id and --transcript-path", file=sys.stderr)
+    # Sentinel-only modes: skip plan + memory writes entirely.
+    if args.mark_saved_only or args.mark_in_progress:
+        if args.mark_saved_only and args.mark_in_progress:
+            print("error: --mark-saved-only and --mark-in-progress are mutually exclusive", file=sys.stderr)
             return 2
-        result = write_saved_sentinel(
-            sentinel_dir, args.session_id, Path(args.transcript_path).expanduser().resolve()
+        if not (args.session_id and args.transcript_path):
+            print("error: sentinel-only mode requires --session-id and --transcript-path", file=sys.stderr)
+            return 2
+        status = "saved" if args.mark_saved_only else "in_progress"
+        result = write_sentinel(
+            sentinel_dir, args.session_id,
+            Path(args.transcript_path).expanduser().resolve(),
+            status,
         )
         if result is None:
             print(f"warn: could not compute context_used from transcript {args.transcript_path}", file=sys.stderr)
             return 1
-        print(f"marked session {args.session_id} as saved (context_used={result})")
+        print(f"marked session {args.session_id} as {status} (context_used={result})")
         return 0
 
     # Full mode: memory writes + optional sentinel.
@@ -260,9 +278,10 @@ def main() -> int:
 
         sentinel_recorded = None
         if wants_sentinel:
-            sentinel_recorded = write_saved_sentinel(
+            sentinel_recorded = write_sentinel(
                 sentinel_dir, args.session_id,
                 Path(args.transcript_path).expanduser().resolve(),
+                "saved",
             )
     finally:
         release_lock(lock)

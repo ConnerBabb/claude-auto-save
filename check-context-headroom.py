@@ -10,26 +10,31 @@ to find the most recent assistant turn's `usage` object, sums the real
 token counts, compares to a model-aware context window, and decides
 whether to fire.
 
-Sentinel semantics (two states with different behavior):
+Sentinel semantics (three states):
 
-  status=pending   Hook fired but /save-context hasn't completed yet.
-                   The hook RE-NUDGES aggressively (every
-                   REFIRE_AFTER_GROWTH tokens of additional growth -
-                   default 1000) until either /save-context completes
-                   and writes the saved sentinel, or compaction shrinks
-                   the session. This is intentional pressure to push
-                   the model to invoke /save-context: the model often
-                   prioritizes the user's prompt over a soft system
-                   reminder, so we re-inject frequently until it acts.
+  status=pending       Hook fired, no skill action observed yet. The
+                       hook RE-NUDGES aggressively (every
+                       REFIRE_AFTER_GROWTH tokens of additional growth -
+                       default 1000) until /save-context starts and
+                       writes the in_progress sentinel. The model often
+                       prioritizes the user's prompt over a soft
+                       reminder, so we re-inject frequently until it
+                       acts.
 
-  status=saved     /save-context completed via memory_write.py and
-                   wrote the sentinel itself. Hook stays quiet for the
-                   rest of this fill-up cycle. No value in re-saving.
+  status=in_progress   /save-context has started executing and wrote
+                       this sentinel as its first action (Step 1). The
+                       hook stays QUIET so the skill can run without
+                       the nudge re-injecting and bloating the context
+                       during the save itself.
 
-Either sentinel is invalidated when current context_used drops below
-the recorded value (the only way that happens is auto-compaction
-shrinking cache_read_input_tokens back to the summary). On compaction
-the post-compaction session can fill up and get its own save.
+  status=saved         /save-context completed via memory_write.py and
+                       wrote the saved sentinel itself. Hook stays
+                       quiet for the rest of this fill-up cycle.
+
+Any sentinel is invalidated when current context_used drops below the
+recorded value (only auto-compaction shrinks the input side). On
+compaction the post-compaction session can fill up and get its own
+save.
 
 Sentinel file: <hook_dir>/.sentinels/<session_id>.flag (JSON).
 
@@ -47,9 +52,14 @@ from pathlib import Path
 # --- Config --------------------------------------------------------------
 
 # Trigger the nudge when remaining headroom drops below this many tokens.
-# 15000 is aggressive on a 200k window (~92% full) and conservative on a
-# 1M window (~98.5% full). Tune via CLAUDE_HOOK_THRESHOLD env var.
-THRESHOLD_TOKENS = int(os.environ.get("CLAUDE_HOOK_THRESHOLD", "15000"))
+# Default 60000 budgets for two things that have to fit between the fire
+# point and the actual context ceiling:
+#   - ~33000 tokens that Claude Code reserves as a compaction buffer
+#     (the actual auto-compaction triggers below the nominal limit)
+#   - ~25000 tokens the /save-context skill itself consumes while it
+#     runs (skill body, session review output, plan JSON, helper output)
+# Tune via CLAUDE_HOOK_THRESHOLD env var.
+THRESHOLD_TOKENS = int(os.environ.get("CLAUDE_HOOK_THRESHOLD", "60000"))
 
 # If a pending sentinel exists, re-fire the nudge every this many tokens
 # of additional growth. Aggressive default (1000) because models often
@@ -104,8 +114,10 @@ def main() -> int:
                 # Invalidate so the post-compaction session can fill up
                 # and get its own save.
                 _safe_unlink(sentinel)
-            elif status == "saved":
-                # Save already completed. Re-saving has no value.
+            elif status in ("saved", "in_progress"):
+                # Save completed OR skill is currently running. Either
+                # way the hook should stay quiet - don't pound the
+                # nudge during the save itself.
                 return 0
             elif status == "pending":
                 if context_used < recorded_used + REFIRE_AFTER_GROWTH:
@@ -281,8 +293,9 @@ def _build_nudge_output(
         "while the full attention is still loaded; after compaction it is\n"
         "too late.\n"
         "\n"
-        "When /save-context invokes memory_write.py for the final write,\n"
-        "pass these so the saved sentinel lands and the hook stops nudging:\n"
+        "/save-context will use these values - first to mark this session\n"
+        "in-progress (Step 1, so the hook stops nudging during the save),\n"
+        "then for the final memory write that flips the sentinel to saved:\n"
         "\n"
         f"    --session-id      {session_id}\n"
         f"    --transcript-path {transcript_path}\n"
