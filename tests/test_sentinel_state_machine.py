@@ -53,6 +53,7 @@ def run_hook(
     context_limit: str = "1000000",
     threshold: str = "15000",
     refire_growth: str = "50000",
+    saved_refire_growth: str = "100000",
 ) -> tuple[int, str, str]:
     """Invoke the hook script with the given payload + env. The hook
     always writes its sentinel next to check-context-headroom.py
@@ -67,6 +68,7 @@ def run_hook(
     env["CLAUDE_HOOK_CONTEXT_LIMIT"] = context_limit
     env["CLAUDE_HOOK_THRESHOLD"] = threshold
     env["CLAUDE_HOOK_REFIRE_GROWTH"] = refire_growth
+    env["CLAUDE_HOOK_SAVED_REFIRE_GROWTH"] = saved_refire_growth
     proc = subprocess.run(
         [sys.executable, str(sentinel_dir.parent / HOOK_SCRIPT.name)],
         input=payload,
@@ -202,6 +204,44 @@ def case_saved_shrunk_resets_and_fires(tmp: Path) -> tuple[bool, str]:
     return True, ""
 
 
+def case_saved_large_growth_low_headroom_refires(tmp: Path) -> tuple[bool, str]:
+    # Saved sentinel at 800_000. Current usage 950_100 -> growth =
+    # 150_100, past the default SAVED_REFIRE_AFTER_GROWTH of 100_000.
+    # context_limit=960_000 -> headroom = 9_900, under the default
+    # threshold of 15_000. Sentinel resets and fresh pending fires.
+    tx = tmp / "tx.jsonl"
+    make_transcript(tx, 950_000)
+    sentinel_dir = tmp / ".sentinels"
+    write_sentinel(sentinel_dir, "s9", "saved", 800_000)
+    code, out, err = run_hook("s9", tx, sentinel_dir, context_limit="960000")
+    if not fired(out):
+        return False, f"saved + growth past SAVED_REFIRE + low headroom should fire; got {out!r}, err={err!r}"
+    s = read_sentinel(sentinel_dir, "s9")
+    if not s or s["status"] != "pending" or s["context_used"] != 950_100:
+        return False, f"after re-fire sentinel should be a fresh pending; got {s}"
+    return True, ""
+
+
+def case_saved_large_growth_high_headroom_silent(tmp: Path) -> tuple[bool, str]:
+    # Saved sentinel at 700_000. Current usage 950_100 -> growth =
+    # 250_100, past SAVED_REFIRE_AFTER_GROWTH=100_000. But the full
+    # 1M context_limit means headroom = 49_900, well above the 15k
+    # threshold. The growth condition unlinks the sentinel, but the
+    # threshold check then skips firing - sentinel ends up gone with
+    # no new pending written.
+    tx = tmp / "tx.jsonl"
+    make_transcript(tx, 950_000)
+    sentinel_dir = tmp / ".sentinels"
+    write_sentinel(sentinel_dir, "s10", "saved", 700_000)
+    code, out, err = run_hook("s10", tx, sentinel_dir)
+    if fired(out):
+        return False, f"high headroom should suppress even after saved-refire reset; got {out!r}"
+    s = read_sentinel(sentinel_dir, "s10")
+    if s is not None:
+        return False, f"sentinel should be unlinked once growth condition met; got {s}"
+    return True, ""
+
+
 def case_in_progress_growth_skips(tmp: Path) -> tuple[bool, str]:
     # in_progress should silence the hook during the save itself, even
     # if context has grown past the refire-growth tolerance.
@@ -239,7 +279,9 @@ CASES = [
     ("pending + small growth -> skip", case_pending_small_growth_skips),
     ("pending + large growth -> reset + re-fire", case_pending_large_growth_refires),
     ("pending + context shrunk -> compaction reset + fire", case_pending_shrunk_resets_and_fires),
-    ("saved + growing context -> skip", case_saved_growing_context_skips),
+    ("saved + small growth (<SAVED_REFIRE) -> skip", case_saved_growing_context_skips),
+    ("saved + large growth + low headroom -> reset + re-fire", case_saved_large_growth_low_headroom_refires),
+    ("saved + large growth + high headroom -> reset + skip", case_saved_large_growth_high_headroom_silent),
     ("saved + context shrunk -> compaction reset + fire", case_saved_shrunk_resets_and_fires),
     ("in_progress + growth -> skip (no pound during save)", case_in_progress_growth_skips),
     ("in_progress + context shrunk -> compaction reset + fire", case_in_progress_shrunk_resets_and_fires),

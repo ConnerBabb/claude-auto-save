@@ -28,11 +28,18 @@ Sentinel semantics (three states):
                        during the save itself.
 
   status=saved         /save-context completed via memory_write.py and
-                       wrote the saved sentinel itself. Hook stays
-                       quiet for the rest of this fill-up cycle.
+                       wrote the saved sentinel. The hook stays quiet
+                       until either (a) compaction resets the sentinel
+                       OR (b) context has grown by more than
+                       SAVED_REFIRE_AFTER_GROWTH tokens since the save
+                       (default 100000). This lets a manual save at 50%
+                       still get a late-cycle nudge near compaction as
+                       new material accumulates; a save late in the
+                       cycle won't trigger a second fire because
+                       compaction beats the growth requirement.
 
-Any sentinel is invalidated when current context_used drops below the
-recorded value (only auto-compaction shrinks the input side). On
+Any sentinel is also invalidated when current context_used drops below
+the recorded value (only auto-compaction shrinks the input side). On
 compaction the post-compaction session can fill up and get its own
 save.
 
@@ -68,6 +75,14 @@ THRESHOLD_TOKENS = int(os.environ.get("CLAUDE_HOOK_THRESHOLD", "30000"))
 # in every turn (each turn typically adds well over 1k tokens) until
 # /save-context completes is the main lever we have to overcome that.
 REFIRE_AFTER_GROWTH = int(os.environ.get("CLAUDE_HOOK_REFIRE_GROWTH", "1000"))
+
+# If a SAVED sentinel exists, allow the hook to re-fire when context
+# has grown by this many tokens since the save AND headroom is still
+# below threshold. Default 100000 turns the saved sentinel into a
+# speed bump (not a wall) so a manual /save-context at 50% still gets
+# a late-cycle nudge near compaction. A save deep in the fill-up cycle
+# won't re-fire because compaction beats the growth requirement.
+SAVED_REFIRE_AFTER_GROWTH = int(os.environ.get("CLAUDE_HOOK_SAVED_REFIRE_GROWTH", "100000"))
 
 # Context-window detection. See _resolve_context_limit().
 DEFAULT_CONTEXT_LIMIT = 1_000_000
@@ -115,11 +130,22 @@ def main() -> int:
                 # Invalidate so the post-compaction session can fill up
                 # and get its own save.
                 _safe_unlink(sentinel)
-            elif status in ("saved", "in_progress"):
-                # Save completed OR skill is currently running. Either
-                # way the hook should stay quiet - don't pound the
-                # nudge during the save itself.
+            elif status == "in_progress":
+                # /save-context is currently running. Stay silent so
+                # the nudge doesn't re-inject mid-save and bloat the
+                # context. Only compaction (handled above) can reset.
                 return 0
+            elif status == "saved":
+                # Save completed. Suppress further nudges until either
+                # compaction resets us OR substantial new material has
+                # accumulated since the save. This lets a save at 50%
+                # still get a late-cycle nudge as context refills.
+                if context_used < recorded_used + SAVED_REFIRE_AFTER_GROWTH:
+                    return 0
+                # Past the saved-refire threshold -> let threshold
+                # check decide whether headroom is actually low enough
+                # to warrant another nudge.
+                _safe_unlink(sentinel)
             elif status == "pending":
                 if context_used < recorded_used + REFIRE_AFTER_GROWTH:
                     # Within growth tolerance - don't pound it on the
